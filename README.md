@@ -1,0 +1,53 @@
+# متابعة شراء الدولار في البنك الأهلي — تنبيهات WhatsApp
+
+يراقب **US DOLLAR → Banknote → Buy** من صفحة البنك الرسمية باستخدام Chromium، ثم يرسل رسالة عبر **Evolution API v2** عند تغير السعر. التشغيل المجاني على GitHub Actions في مستودع عام، بفحص مجدول كل خمس دقائق تقريبًا، بدون جهاز يعمل باستمرار.
+
+## التفعيل النهائي
+
+من GitHub افتح **Settings → Secrets and variables → Actions → New repository secret** وأضف:
+
+| Secret | القيمة |
+| --- | --- |
+| `EVOLUTION_API_KEY` | مفتاح Evolution الخاص بك |
+
+إعدادا `EVOLUTION_URL` و`WHATSAPP_NUMBER` يحفظان كـ Secrets أثناء النشر، ولا يظهران في الكود. الرقم يكون بالصيغة الدولية المصرية بدون `+` أو الصفر المحلي.
+
+إذا توجد جلسة واحدة متصلة بواتساب، سيكتشف السكربت اسمها تلقائيًا. إذا توجد أكثر من جلسة، أو المفتاح لا يسمح بعرض الجلسات، أضف Secret باسم `EVOLUTION_INSTANCE` بقيمة اسم الجلسة المطلوبة كما يظهر في Evolution Manager. يجب أن تكون الجلسة مربوطة بواتساب وحالتها `open`.
+
+بعد إضافة المفتاح، انتظر الجدولة أو افتح **Actions → NBE USD WhatsApp monitor → Run workflow**، مع ترك `dry_run` غير محدد. أول تشغيل يرسل رسالة تأكيد بالسعر الحالي ويحفظه كمرجع؛ بعد ذلك يرسل عند الزيادة أو النقص فقط.
+
+## السلوك والحدود
+
+- يتم تحديد العملة ونوع التعامل واتجاه الشراء معًا، بدل الاعتماد على أول صف أو XPath مطلق يتأثر بتغيير التصميم.
+- لا يحفظ السعر الجديد إلا بعد إقرار Evolution باستلام الرسالة. فشل الموقع أو إرسال الرسالة يظهر كتَشغيل فاشل في Actions، ويحافظ على المرجع السابق للمحاولة المقبلة.
+- إقرار Evolution لا يضمن وصول الرسالة للهاتف؛ راقب اتصال جلسة واتساب.
+- المقارنة بين القراءات: قد يفوت تغير حصل ورجع بين فحصين. GitHub قد يؤخر أو يسقط تشغيلًا مجدولًا؛ لا يوجد ضمان تنبيه لحظي.
+- توجد نافذة نادرة لتكرار التنبيه إذا قُبلت الرسالة ثم انقطع الرد أو فشل حفظ الحالة في GitHub. لا يعيد السكربت إرسال طلب WhatsApp تلقائيًا داخل التشغيل نفسه.
+- `state.json` يحفظ السعر وآخر يوم فحص ناجح فقط. يتحدث عند التغير ومرة يوميًا؛ لا يحتوي الرقم أو المفتاح. حافظ عليه لتجنب إعادة رسالة البداية.
+- GitHub يعطل الجدولة في المستودعات العامة بعد 60 يومًا بلا نشاط؛ تحديث الحالة اليومي أثناء التشغيل الناجح يساعد على إبقاء المستودع نشطًا. راجع Actions إذا تعطلت المراقبة طويلًا.
+- التشغيل مجاني على **standard Ubuntu runners في مستودع عام** وفق سياسة GitHub الحالية. الكود والأسعار عامة، أما مفاتيح الاتصال والرقم فتبقى Secrets. لا تحول المستودع إلى خاص متوقعًا نفس مجانية الدقائق.
+- استضافة المراقبة مجانية؛ تشغيل خادم Evolution الموجود لديك واتصاله مسؤولية منفصلة.
+
+## اختبار دون إرسال
+
+في Run workflow فعّل `dry_run`: يقرأ الموقع الحقيقي دون إرسال أو تعديل المرجع، ويعمل حتى قبل إضافة المفتاح.
+
+محليًا (Python 3.12 أو أحدث):
+
+```sh
+pip install -r requirements.txt
+python -m playwright install chromium
+python -m unittest -v
+python monitor.py --dry-run
+```
+
+للتشغيل المحلي الفعلي، عرّف متغيرات البيئة `EVOLUTION_URL` (جذر الخادم بدون `/manager/`)، و`WHATSAPP_NUMBER`، و`EVOLUTION_API_KEY`، ثم شغل `python monitor.py`. Windows قد يحتاج `pip install tzdata` لوقت القاهرة.
+
+## المراجع
+
+- [صفحة البنك الرسمية](https://www.nbe.com.eg/NBE/E/#/EN/ExchangeRatesAndCurrencyConverter)
+- [مجانية GitHub Actions للمستودعات العامة](https://docs.github.com/en/actions/concepts/billing-and-usage)
+- [جدولة GitHub Actions وتأخير التشغيل وحد الخمس دقائق](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+- [تعريف إرسال النص في مصدر Evolution الرسمي](https://github.com/EvolutionAPI/evolution-api/blob/main/src/api/controllers/sendMessage.controller.ts)
+
+لإيقاف الرسائل: **Actions → NBE USD WhatsApp monitor → … → Disable workflow**.
