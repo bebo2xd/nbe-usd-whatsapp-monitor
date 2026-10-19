@@ -18,6 +18,13 @@ BUY_XPATH = "//tr[td[@id='flag']//span[normalize-space()='US DOLLAR']]/td[@id='B
 STATE = Path(os.environ.get('STATE_FILE', 'state.json'))
 
 
+def summary(message):
+    target = os.environ.get('GITHUB_STEP_SUMMARY')
+    if target:
+        with open(target, 'a', encoding='utf-8') as output:
+            output.write(message + '\n\n')
+
+
 def normalize_price(raw):
     raw = raw.strip()
     if not re.fullmatch(r'\d{1,4}(?:\.\d{1,6})?', raw):
@@ -121,16 +128,21 @@ def load_state():
 def run(dry_run=False, reader=read_price, sender=send_notification):
     price = reader()
     print(f'NBE USD banknote BUY: {price} EGP')
+    when = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    summary(f'### NBE USD banknote BUY\n\nChecked at: {when}\n\nPrice: **{price} EGP**')
     if dry_run:
         print('Read-only check passed; no message or state change.')
+        summary('Read-only test: WhatsApp sending was **not tested**.')
         return
     state = load_state()
     previous = state.get('price')
     if previous != price:
         sender(price, previous)
         print('Evolution accepted the notification.')
+        summary('✅ Evolution accepted the WhatsApp notification. This is an API acknowledgment, not a delivery receipt.')
     else:
         print('No price change; no notification.')
+        summary('✅ Check succeeded; price unchanged, so no message was sent.')
     # Write only after successful send. Daily heartbeat keeps the scheduled repo active.
     today = datetime.now(timezone.utc).date().isoformat()
     if previous != price or state.get('last_success_day') != today:
@@ -158,4 +170,8 @@ if __name__ == '__main__':
                 if attempt == 2:
                     raise RuntimeError('Unable to read NBE USD banknote BUY after 3 attempts') from None
                 time.sleep(5)
-    run(args.dry_run, reader=reader_with_retry)
+    try:
+        run(args.dry_run, reader=reader_with_retry)
+    except Exception:
+        summary('❌ Monitor failed. Open the failed job logs for the cause. A green read-only test does not verify WhatsApp sending.')
+        raise
